@@ -58,13 +58,42 @@ end_custom_prompt = (
     + "The text from the receipts is extracted from left top to bottom right in a list format. Here is the list: "
 )
 
-st.markdown(" ")  # One empty line
+# st.markdown(" ")  # One empty line
+st.markdown("----")  # One empty line
 
-rename_pattern = st.text_input(
-    "Define filename pattern using extracted fields (use _ or - to separate):",
-    value="date_category_amount paid",
-    help="Allowed fields: category, date, company or point of sale, location, currency, amount paid",
+
+allowed_fields = [
+    "category",
+    "date",
+    "company or point of sale",
+    "location",
+    "currency",
+    "amount paid",
+]
+
+st.markdown("### 🧩 Filename Pattern Builder")
+
+# Multi-select fields
+selected_fields = st.multiselect(
+    "Select fields to include in filename (order matters):",
+    options=allowed_fields,
+    default=["date", "category", "amount paid"],
 )
+
+# Separator choice
+separator = st.radio("Choose a separator:", options=["_", "-"], horizontal=True)
+
+# Preview & internal pattern
+if selected_fields:
+    rename_pattern = separator.join(selected_fields)
+    st.markdown(f"**🔤 Preview pattern:** `{rename_pattern}`")
+else:
+    rename_pattern = ""
+    st.warning("Please select at least one field.")
+
+# Store in session_state for reuse
+st.session_state.rename_pattern = rename_pattern
+
 
 # Initialize session state for uploaded files and results
 if "uploaded_files" not in st.session_state:
@@ -83,6 +112,7 @@ if "saved_images" not in st.session_state:
     st.session_state.saved_images = []
     logger.info("Session state: initialized saved_images.")
 
+st.markdown("----")  # One empty line
 st.markdown(" ")  # One empty line
 
 # File uploader
@@ -165,10 +195,10 @@ for uploaded_file in st.session_state.uploaded_files:
             and file_id in st.session_state.ocr_results
         ):
             data_dict = st.session_state.llm_outputs[file_id]
-            tokens = re.split(r"[-_]", rename_pattern)
-            sep = "_" if "_" in rename_pattern else "-"
-            parts = [re.sub(r"[^\w\-]", "_", data_dict.get(t, "na")) for t in tokens]
-            new_filename = sep.join(parts) + os.path.splitext(file_id)[1]
+
+            new_filename = (
+                separator.join(selected_fields) + os.path.splitext(file_id)[1]
+            )
 
             image = Image.open(uploaded_file).convert("RGB")
             image_bytes = io.BytesIO()

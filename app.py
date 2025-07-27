@@ -7,7 +7,7 @@ from src.auth import load_authenticator
 from src.bootstrap import load_resources
 
 # This should be first before any other Streamlit output
-st.set_page_config(page_title="Receipt Analyzer", layout="wide")
+st.set_page_config(page_title="Receipt Analyzer", layout="wide", page_icon="👻")
 
 # Login widget
 authenticator = load_authenticator()
