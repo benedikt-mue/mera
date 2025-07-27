@@ -1,5 +1,9 @@
 import io
 import logging
+import os
+import re
+import zipfile
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -11,34 +15,33 @@ from src.auth import load_authenticator
 from src.bootstrap import load_resources
 
 # Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s:%(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 logger = logging.getLogger(__name__)
 
+# Authenticate user
 authenticator = load_authenticator()
-
 try:
     auth = authenticator.login("main")
+    logger.info("User authentication attempted.")
 except Exception as e:
+    logger.error(f"Authentication error: {e}")
     st.error(e)
 
-if not st.session_state["authentication_status"]:
+if not st.session_state.get("authentication_status"):
+    logger.warning("Authentication failed or not present in session state.")
     st.stop()
 
-logger.debug(
-    "User authentication status: %s", st.session_state["authentication_status"]
-)
-
+# Register HEIF opener
 register_heif_opener()
 logger.info("HEIF opener registered.")
 
 reader, client = load_resources()
-logger.info("Resources loaded: OCR reader and OpenAI client.")
-
+logger.info("Resources loaded (OCR reader and LLM client).")
 st.title("Upload and Analyze Receipt")
 
+st.markdown(" ")  # One empty line
+
+# Prompt for LLM
 default_prompt = """I extracted this text from my receipt, can you please find an appropriate category to classify the expense.
 The categories are: 'Food', 'Transport', 'Entertainment', 'Shopping', 'Health', 'Other'.
 If the text does not match any of the categories, respond with 'Other'. If you are unsure, also respond with 'Other'.
@@ -50,28 +53,39 @@ If the information is not available, put 'na' instead. Format the date to yyyy-m
 custom_prompt = st.text_area(
     "🛠️ Customize extraction prompt", value=default_prompt, height=200
 )
-
-# custom_prompt += f"The output is in a list format, each item represents a bounding box, the text detected and confident level, respectively: "
 end_custom_prompt = (
     custom_prompt
-    + "The text from the receipts is extracted from left top to bottom right in a list format, which means that the first words in the list are at the top left of a receipt and the last words of the list are on the bottom right. Here is the list: "
+    + "The text from the receipts is extracted from left top to bottom right in a list format. Here is the list: "
 )
 
+st.markdown(" ")  # One empty line
 
-# Initialize session state
+rename_pattern = st.text_input(
+    "Define filename pattern using extracted fields (use _ or - to separate):",
+    value="date_category_amount paid",
+    help="Allowed fields: category, date, company or point of sale, location, currency, amount paid",
+)
+
+# Initialize session state for uploaded files and results
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
-
+    logger.info("Session state: initialized uploaded_files.")
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = "uploader_0"
-
+    logger.info("Session state: initialized uploader_key.")
 if "ocr_results" not in st.session_state:
     st.session_state.ocr_results = {}
-
+    logger.info("Session state: initialized ocr_results.")
 if "llm_outputs" not in st.session_state:
     st.session_state.llm_outputs = {}
+    logger.info("Session state: initialized llm_outputs.")
+if "saved_images" not in st.session_state:
+    st.session_state.saved_images = []
+    logger.info("Session state: initialized saved_images.")
 
-# Upload files (key is dynamic and resets on remove)
+st.markdown(" ")  # One empty line
+
+# File uploader
 uploaded = st.file_uploader(
     "📷 Upload one or more receipt images...",
     type=["jpg", "jpeg", "png", "heic"],
@@ -79,138 +93,178 @@ uploaded = st.file_uploader(
     key=st.session_state.uploader_key,
 )
 
-# Remove button – visible only if files are uploaded
-if st.session_state.uploaded_files:
-    if st.button("🗑️ Remove Uploaded Images"):
-        st.session_state.uploaded_files = []
-        st.session_state.ocr_results = {}
-        st.session_state.llm_outputs = {}
-        current_index = int(st.session_state.uploader_key.split("_")[1])
-        st.session_state.uploader_key = f"uploader_{current_index + 1}"
-        st.rerun()
+st.markdown("")  # One empty line
 
-# Store uploaded files - Add only new files (avoid duplicates by name)
+col1, col2 = st.columns([9, 1])
+with col1:
+    if st.session_state.uploaded_files:
+        if st.button("🗑️ Remove Uploaded Images"):
+            logger.info("User triggered removal of uploaded images.")
+            st.session_state.uploaded_files = []
+            st.session_state.ocr_results = {}
+            st.session_state.llm_outputs = {}
+            st.session_state.saved_images = []
+            current_index = int(st.session_state.uploader_key.split("_")[1])
+            st.session_state.uploader_key = f"uploader_{current_index + 1}"
+            st.rerun()
+with col2:
+    # batch download of all saved images
+    if st.session_state.saved_images:
+        logger.info(
+            f"Preparing ZIP for {len(st.session_state.saved_images)} saved images."
+        )
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for fname, fbytes in st.session_state.saved_images:
+                zip_file.writestr(fname, fbytes)
+        zip_buffer.seek(0)
+        st.download_button(
+            label="📁 Download All",
+            data=zip_buffer,
+            file_name=f"renamed_receipts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            mime="application/zip",
+            key="batch_zip_download",
+        )
+
+st.markdown(" ")  # One empty line
+
+# Deduplication
 if uploaded:
+    logger.info(f"{len(uploaded)} files uploaded by user.")
     existing_filenames = {f.name for f in st.session_state.uploaded_files}
     new_files = [f for f in uploaded if f.name not in existing_filenames]
-
     if new_files:
+        logger.info(f"{len(new_files)} new files to add: {[f.name for f in new_files]}")
         st.session_state.uploaded_files.extend(new_files)
-        logger.info(f"Added new files: {[f.name for f in new_files]}")
-
-        # Force uploader to reset (so duplicate files disappear from UI)
         current_index = int(st.session_state.uploader_key.split("_")[1])
         st.session_state.uploader_key = f"uploader_{current_index + 1}"
         st.rerun()
     else:
+        logger.warning("All selected files were already uploaded.")
         st.warning("⚠️ All selected files were already uploaded.")
 
+st.markdown("---")  # Horizontal rule
 
-# Process uploaded images (only unprocessed ones)
-if st.session_state.uploaded_files:
-    for uploaded_file in st.session_state.uploaded_files:
-        file_id = uploaded_file.name
+# Process each uploaded file
+for uploaded_file in st.session_state.uploaded_files:
+    file_id = uploaded_file.name
+    reanalyze_key = f"reanalyze_{file_id}"
+    save_key = f"save_{file_id}"
+    already_processed = (
+        file_id in st.session_state.ocr_results
+        and file_id in st.session_state.llm_outputs
+    )
+    st.subheader(f"📄 File: `{file_id}`")
 
-        # st.subheader(f"🧾 File: `{file_id}`")
+    col1, col2 = st.columns([10.5, 1])
+    with col1:
+        reanalyze_triggered = st.button("🔁 Rerun", key=reanalyze_key)
+    with col2:
+        if (
+            file_id in st.session_state.llm_outputs
+            and file_id in st.session_state.ocr_results
+        ):
+            data_dict = st.session_state.llm_outputs[file_id]
+            tokens = re.split(r"[-_]", rename_pattern)
+            sep = "_" if "_" in rename_pattern else "-"
+            parts = [re.sub(r"[^\w\-]", "_", data_dict.get(t, "na")) for t in tokens]
+            new_filename = sep.join(parts) + os.path.splitext(file_id)[1]
 
-        # If already processed, show stored results
-        reanalyze_key = f"reanalyze_{file_id}"
+            image = Image.open(uploaded_file).convert("RGB")
+            image_bytes = io.BytesIO()
+            image.save(image_bytes, format=image.format or "JPEG")
+            image_bytes.seek(0)
+            image_data = image_bytes.read()
 
-        # Check if file already processed
-        already_processed = (
-            file_id in st.session_state.ocr_results
-            and file_id in st.session_state.llm_outputs
+            if new_filename not in [f[0] for f in st.session_state.saved_images]:
+                st.session_state.saved_images.append((new_filename, image_data))
+                logger.info(f"Saved image as {new_filename}.")
+
+            mime_type = (
+                "image/jpeg"
+                if new_filename.lower().endswith((".jpg", ".jpeg"))
+                else "image/png"
+            )
+
+            st.download_button(
+                label="⬇️ Download",
+                data=image_data,
+                file_name=new_filename,
+                mime=mime_type,
+                key=f"download_inline_{file_id}_{datetime.now().timestamp()}",
+            )
+
+    if already_processed and not reanalyze_triggered:
+        logger.info(f"Using cached OCR/LLM results for {file_id}.")
+        ocr_text = st.session_state.ocr_results[file_id]
+        data_dict = st.session_state.llm_outputs[file_id]
+    else:
+        try:
+            logger.info(f"Processing file {file_id} with OCR.")
+            image = Image.open(uploaded_file).convert("RGB")
+            image_np = np.array(image)
+            ocr_result = reader.readtext(image_np, detail=0)
+            ocr_text = ocr_result
+            st.session_state.ocr_results[file_id] = ocr_text
+
+            full_prompt = f"{end_custom_prompt} {ocr_result}"
+            logger.info(f"Sending prompt to LLM for {file_id}.")
+            with st.spinner("🔍 Analyzing with Azure OpenAI..."):
+                response = client.chat.completions.create(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a helpful assistant that helps classify expenses from receipts.",
+                        },
+                        {"role": "user", "content": full_prompt},
+                    ],
+                    max_tokens=4096,
+                    temperature=1,
+                    top_p=1.0,
+                    model="gpt-4-32k-0613",
+                )
+                raw_output = response.choices[0].message.content
+                expected_keys = [
+                    "category",
+                    "date",
+                    "company or point of sale",
+                    "location",
+                    "currency",
+                    "amount paid",
+                ]
+                data_dict = {key: "na" for key in expected_keys}
+                for line in raw_output.split("\n"):
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        key = key.strip().lower()
+                        value = value.strip()
+                        for expected in expected_keys:
+                            if key == expected.lower():
+                                data_dict[expected] = value
+                st.session_state.llm_outputs[file_id] = data_dict
+                logger.info(f"LLM output processed for {file_id}.")
+        except Exception as e:
+            logger.error(f"Error processing `{file_id}`: {e}")
+            st.error(f"Error processing `{file_id}`: {e}")
+            continue
+
+    # Show extracted OCR results
+    editable_df = (
+        pd.DataFrame.from_dict(data_dict, orient="index", columns=["Value"])
+        .rename_axis("Field")
+        .reset_index()
+    )
+    with st.expander("📝 Show Results", expanded=True):
+        edited_df = st.data_editor(
+            editable_df,
+            num_rows="fixed",
+            use_container_width=True,
+            key=f"editor_{file_id}",
         )
 
-        col1, col2 = st.columns([6, 1])  # Adjust ratio as needed
-
-        st.markdown("---")
-        st.subheader(f"🧾 File: `{file_id}`")
-
-        reanalyze_triggered = st.button("🔁", key=reanalyze_key)
-
-        # If already processed and no re-analyze clicked
-        if already_processed and not reanalyze_triggered:
-            st.info("ℹ️ Previously processed. Showing cached result.")
-            ocr_text = st.session_state.ocr_results[file_id]
-            data_dict = st.session_state.llm_outputs[file_id]
-            logger.info(f"Using cached results for {file_id}.")
-        else:
-            try:
-                logger.info(f"Processing file: {file_id}")
-
-                try:
-                    # Open and convert image
-                    image = Image.open(uploaded_file).convert("RGB")
-                    logger.info(f"Image {file_id} opened and converted to RGB.")
-                    image_np = np.array(image)
-                    # OCR
-                    ocr_result = reader.readtext(image_np, detail=0)
-                    logger.info(f"OCR completed for {file_id}.")
-                except Exception as e:
-                    logger.error(f"OCR failed on {file_id}: {e}", exc_info=True)
-                    st.error(f"❌ OCR failed for `{file_id}`: {e}")
-                    continue  # skip further processing for this file
-                ocr_text = ocr_result
-                full_prompt = f"{end_custom_prompt} {ocr_result}"
-
-                # Store OCR result
-                st.session_state.ocr_results[file_id] = ocr_text
-
-                # LLM extraction
-                with st.spinner("🔍 Analyzing with Azure OpenAI..."):
-                    logger.debug(f"Sending OCR text to LLM for {file_id}.")
-                    response = client.chat.completions.create(
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a helpful assistant that helps classify expenses from receipts.",
-                            },
-                            {"role": "user", "content": full_prompt},
-                        ],
-                        max_tokens=4096,
-                        temperature=1,
-                        top_p=1.0,
-                        model="gpt-4-32k-0613",
-                    )
-                    raw_output = response.choices[0].message.content
-                    logger.info(f"LLM response for {file_id}: {raw_output}")
-
-                    # Robust dict parsing
-                    expected_keys = [
-                        "category",
-                        "date",
-                        "company or point of sale",
-                        "location",
-                        "currency",
-                        "amount paid",
-                    ]
-                    data_dict = {key: "n/a" for key in expected_keys}
-                    for line in raw_output.split("\n"):
-                        if ":" in line:
-                            key, value = line.split(":", 1)
-                            key = key.strip().lower()
-                            value = value.strip()
-                            for expected in expected_keys:
-                                if key == expected.lower():
-                                    data_dict[expected] = value
-
-                    # Store LLM result
-                    st.session_state.llm_outputs[file_id] = data_dict
-
-            except Exception as e:
-                logger.error(f"Error processing {file_id}: {e}", exc_info=True)
-                st.error(f"❌ Error processing `{file_id}`: {e}")
-                continue  # skip display
-
-        # Always show OCR + results
-        with st.expander("📝 Show extracted OCR text"):
-            st.code(ocr_text)
-
-        st.markdown("#### 📄 Extracted Information")
-        st.table(pd.DataFrame.from_dict(data_dict, orient="index", columns=["Value"]))
-
-        # Always show image
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption=f"🖼️ {file_id}", use_container_width=True)
-        logger.info(f"Image displayed for {file_id}.")
+        # Show image
+        with st.expander("🖼️ Show Picture", expanded=True):
+            image = Image.open(uploaded_file).convert("RGB")
+            st.image(image, caption=f"🖼️ {file_id}", use_container_width=True)
+            with st.expander("🖋️ Show Raw Extracted Info"):
+                st.code(ocr_text)
