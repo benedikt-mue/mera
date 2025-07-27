@@ -141,7 +141,7 @@ if st.session_state.uploaded_files:
                 image = Image.open(uploaded_file).convert("RGB")
                 logger.info(f"Image {file_id} opened and converted to RGB.")
                 image_np = np.array(image)
-
+                logger.info(f"Image {file_id} converted to numpy array.")
                 # OCR
                 ocr_result = reader.readtext(image_np, detail=0)
                 logger.info(f"OCR completed for {file_id}.")
