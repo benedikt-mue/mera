@@ -36,11 +36,11 @@ elif st.session_state["authentication_status"] == None:
 with st.spinner("Initializing models..."):
     _ = load_resources()
 
-st.title("MRA - Mavi's Receipt Analyzer 🤖")
+st.title("👻 MRA - Mavi's Receipt Analyzer")
 st.info(
     "Hi Boo, welcome to your own Receipt Analyzer! "
     "\n\n"
-    "This app analyzes your receipts to help automate your expenses report, "
+    "This app analyzes your receipts to help automate your expense report, "
     "to ease the process of mapping your receipts to your financial records, "
     "to reduce your level of cursing against Curiox (and the world), and "
     "hopefully avoids getting your Credit Card revoked ever again (almost)."
