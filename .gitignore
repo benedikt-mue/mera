@@ -4,8 +4,9 @@
 !README.md
 !host.json
 !*.py
-!pyproject.toml
-!uv.lock
+# !pyproject.toml
+# !uv.lock
+!requirements.txt
 !.gitignore
 !.python-version
 !user-credentials.yaml
