@@ -52,8 +52,10 @@ custom_prompt = st.text_area(
 )
 
 # custom_prompt += f"The output is in a list format, each item represents a bounding box, the text detected and confident level, respectively: "
-custom_prompt += "The text from the receipts is extracted from left top to bottom right in a list format, which means "
-"that the first words in the list are at the top left of a receipt and the last words of the list are on the bottom right. Here is the list: "
+end_custom_prompt = (
+    custom_prompt
+    + "The text from the receipts is extracted from left top to bottom right in a list format, which means that the first words in the list are at the top left of a receipt and the last words of the list are on the bottom right. Here is the list: "
+)
 
 
 # Initialize session state
@@ -150,7 +152,7 @@ if st.session_state.uploaded_files:
                     st.error(f"❌ OCR failed for `{file_id}`: {e}")
                     continue  # skip further processing for this file
                 ocr_text = ocr_result
-                full_prompt = f"{custom_prompt} {ocr_result}"
+                full_prompt = f"{end_custom_prompt} {ocr_result}"
 
                 # Store OCR result
                 st.session_state.ocr_results[file_id] = ocr_text
