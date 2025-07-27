@@ -1,0 +1,15 @@
+# ignore everything
+*
+# un-ignore files and file types
+!README.md
+!host.json
+!*.py
+!pyproject.toml
+!uv.lock
+!.gitignore
+!.python-version
+!user-credentials.yaml
+# un-ignore folders to match file types
+!src/
+!pages/
+!source/

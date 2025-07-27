@@ -1,0 +1,18 @@
+[project]
+name = "mera"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "easyocr>=1.7.2",
+    "openai>=1.97.1",
+    "pillow-heif>=1.0.0",
+    "streamlit-authenticator>=0.4.2",
+    "streamlit>=1.47.1",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+]
