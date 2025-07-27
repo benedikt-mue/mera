@@ -141,10 +141,14 @@ if st.session_state.uploaded_files:
                 image = Image.open(uploaded_file).convert("RGB")
                 logger.info(f"Image {file_id} opened and converted to RGB.")
                 image_np = np.array(image)
-                logger.info(f"Image {file_id} converted to numpy array.")
                 # OCR
-                ocr_result = reader.readtext(image_np, detail=0)
-                logger.info(f"OCR completed for {file_id}.")
+                try:
+                    ocr_result = reader.readtext(image_np, detail=0)
+                    logger.info(f"OCR completed for {file_id}.")
+                except Exception as e:
+                    logger.error(f"OCR failed on {file_id}: {e}", exc_info=True)
+                    st.error(f"❌ OCR failed for `{file_id}`: {e}")
+                    continue  # skip further processing for this file
                 ocr_text = ocr_result
                 full_prompt = f"{custom_prompt} {ocr_result}"
 
