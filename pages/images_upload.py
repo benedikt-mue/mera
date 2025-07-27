@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 authenticator = load_authenticator()
 
-# try:
-#     auth = authenticator.login("main")
-# except Exception as e:
-#     st.error(e)
+try:
+    auth = authenticator.login("main")
+except Exception as e:
+    st.error(e)
 
 if not st.session_state["authentication_status"]:
     st.stop()
@@ -137,12 +137,12 @@ if st.session_state.uploaded_files:
             try:
                 logger.info(f"Processing file: {file_id}")
 
-                # Open and convert image
-                image = Image.open(uploaded_file).convert("RGB")
-                logger.info(f"Image {file_id} opened and converted to RGB.")
-                image_np = np.array(image)
-                # OCR
                 try:
+                    # Open and convert image
+                    image = Image.open(uploaded_file).convert("RGB")
+                    logger.info(f"Image {file_id} opened and converted to RGB.")
+                    image_np = np.array(image)
+                    # OCR
                     ocr_result = reader.readtext(image_np, detail=0)
                     logger.info(f"OCR completed for {file_id}.")
                 except Exception as e:
