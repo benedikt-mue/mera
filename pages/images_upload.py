@@ -53,11 +53,24 @@ Output 'Category', 'Date', 'Company or Point of Sale', 'Location', 'Currency', '
 The amount paid is the total amount on the receipt and usually accompanied by words like 'Total', 'Paid', or 'Amount' and a currency indicator.
 If the information is not available, put 'na' instead. Format the date to yyyy-mm-dd. Translate all outputted words into english."""
 
-custom_prompt = st.text_area(
-    "🛠️ Customize extraction prompt", value=default_prompt, height=200
-)
+
+st.markdown("## 🛠️ Extraction Prompt Customizer")
+with st.expander("Show/Hide prompt", expanded=False):
+    new_prompt = st.text_area(
+        label="Edit the prompt (changes here do NOT trigger reprocessing)",
+        value=st.session_state.custom_prompt,
+        height=200,
+        key="custom_prompt_editor",
+    )
+    if new_prompt != st.session_state.custom_prompt:
+        st.session_state.custom_prompt = new_prompt
+        st.toast("Prompt updated. It will be used for the next re-analysis.", icon="💡")
+
+
 end_custom_prompt = (
-    custom_prompt
+    new_prompt
+    if new_prompt
+    else default_prompt
     + "The text from the receipts is extracted from left top to bottom right in a list format. Here is the list: "
 )
 
@@ -74,7 +87,7 @@ allowed_fields = [
     "amount paid",
 ]
 
-st.markdown("### 🧩 Filename Pattern Builder")
+st.markdown("## 🧩 Filename Pattern Builder")
 
 # Multi-select fields
 selected_fields = st.multiselect(
@@ -119,6 +132,8 @@ if "saved_images" not in st.session_state:
 if "reanalyze_triggered" not in st.session_state:
     st.session_state.reanalyze_triggered = False
     logger.info("Session state: initialized reanalyze_triggered.")
+if "custom_prompt" not in st.session_state:
+    st.session_state.custom_prompt = default_prompt
 
 st.markdown("----")
 st.markdown(" ")  # One empty line
@@ -129,8 +144,9 @@ def update_key():
 
 
 # Upload widget
+st.markdown("## 📷 Image Uploader")
 uploaded = st.file_uploader(
-    "📷 Upload one or more receipt images...",
+    "Upload one or more receipt images...",
     type=["jpg", "jpeg", "png", "heic"],
     accept_multiple_files=True,
     key=f"uploader_{st.session_state.uploader_key}",
@@ -172,7 +188,10 @@ if st.session_state.uploaded_files:
         update_key()
         st.rerun()
 
-st.markdown("----")
+st.markdown(
+    "### <hr style='margin-bottom: 0; border: 1px solid #ccc;'>",
+    unsafe_allow_html=True,
+)
 
 
 # Process each uploaded file
@@ -209,7 +228,7 @@ for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
                         {"role": "user", "content": full_prompt},
                     ],
                     max_tokens=4096,
-                    temperature=0.85,
+                    temperature=0.75,
                     top_p=1.0,
                     model="gpt-4-32k-0613",
                 )
@@ -256,7 +275,6 @@ for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
     st.session_state.saved_images.append((new_filename, download_buffer.getvalue()))
 
     # Batch download
-
     if (
         idx == 0
         and st.session_state.saved_images
@@ -287,8 +305,15 @@ for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
         #             index=len(filenames) - 1,
         #             disabled=False,
         #         )
-        st.markdown("----")
-
+        if st.button(
+            f"Rerun All Files ({len(st.session_state.uploaded_files)})",
+            icon="🔁",
+            key="rerun_all",
+        ):
+            logger.info("User triggered full rerun via 'Rerun All' button.")
+            st.session_state.reanalyze_triggered = True
+            st.rerun()
+        st.markdown("---")
     st.subheader(f"📄 File: `{file_id}`  ➡️  `{new_filename}`")
 
     st.download_button(
