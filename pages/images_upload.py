@@ -53,15 +53,18 @@ If the text does not match any of the categories, respond with 'Other'. If you a
 
 if "custom_prompt" not in st.session_state:
     st.session_state.custom_prompt = default_prompt
+if "custom_prompt_editor" not in st.session_state:
+    st.session_state.custom_prompt_editor = st.session_state.custom_prompt
 
 st.markdown("## 🛠️ Extraction Prompt Customizer")
 with st.expander("Show edit prompt", expanded=False):
     if st.button("Reset Prompt"):
         st.session_state.custom_prompt = default_prompt
+        st.session_state.custom_prompt_editor = default_prompt
         st.toast("Prompt reset to default.", icon="🔄")
     new_prompt = st.text_area(
         label="Edit the prompt (changes here do NOT trigger reprocessing)",
-        value=st.session_state.custom_prompt,
+        value=st.session_state.custom_prompt_editor,
         height=200,
         key="custom_prompt_editor",
     )
