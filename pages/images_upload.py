@@ -89,7 +89,7 @@ separator = st.radio("Choose a separator:", options=["_", "-"], horizontal=True)
 # Preview & internal pattern
 if selected_fields:
     rename_pattern = separator.join(selected_fields)
-    st.markdown(f"**🔤 Preview pattern:** `{rename_pattern}`")
+    st.markdown(f"🔤 **Preview pattern:** `{rename_pattern}`")
 else:
     rename_pattern = ""
     st.warning("Please select at least one field.")
@@ -103,14 +103,16 @@ if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
     logger.info("Session state: initialized uploaded_files.")
 if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = "uploader_0"
-    logger.info("Session state: initialized uploader_key.")
+    st.session_state.uploader_key = 0
+    logger.info(f"Session state uploader_key: {st.session_state.uploader_key}.")
 if "ocr_results" not in st.session_state:
     st.session_state.ocr_results = {}
     logger.info("Session state: initialized ocr_results.")
 if "llm_outputs" not in st.session_state:
     st.session_state.llm_outputs = {}
     logger.info("Session state: initialized llm_outputs.")
+if "new_files" not in st.session_state:
+    st.session_state.new_files = []
 if "saved_images" not in st.session_state:
     st.session_state.saved_images = []
     logger.info("Session state: initialized saved_images.")
@@ -121,31 +123,41 @@ if "reanalyze_triggered" not in st.session_state:
 st.markdown("----")
 st.markdown(" ")  # One empty line
 
+
+def update_key():
+    st.session_state.uploader_key += 1
+
+
 # Upload widget
 uploaded = st.file_uploader(
     "📷 Upload one or more receipt images...",
     type=["jpg", "jpeg", "png", "heic"],
     accept_multiple_files=True,
-    key=st.session_state.uploader_key,
+    key=f"uploader_{st.session_state.uploader_key}",
 )
 
-# Process uploads AFTER rendering the widget
+# Process uploads rendering the widget
 if uploaded:
+    uploaded_names = {f.name for f in uploaded}
     existing_names = {f.name for f in st.session_state.uploaded_files}
+
     new_files = [f for f in uploaded if f.name not in existing_names]
+    duplicate_files = uploaded_names & existing_names  # intersection = duplicates
 
     if new_files:
         st.session_state.uploaded_files.extend(new_files)
+        st.session_state.new_files = new_files
 
-        # Delay rerun until next interaction
-        index = int(st.session_state.uploader_key.split("_")[1]) + 1
-        st.session_state.uploader_key = f"uploader_{index}"
-
+        if duplicate_files:
+            st.toast("One or more selected files were already uploaded.", icon="⚠️")
     else:
-        st.toast("All (or some) selected files were already uploaded.", icon="⚠️")
+        st.toast("All selected files were already uploaded.", icon="⚠️")
 
 num_uploaded = len(st.session_state.uploaded_files)
-st.caption(f"🧾 {num_uploaded} unique file{'s' if num_uploaded != 1 else ''} uploaded.")
+if num_uploaded > 0:
+    st.caption(
+        f"🧾 {num_uploaded} unique file{'s' if num_uploaded != 1 else ''} uploaded."
+    )
 
 # Remove button – visible only if files are uploaded
 if st.session_state.uploaded_files:
@@ -155,33 +167,16 @@ if st.session_state.uploaded_files:
         st.session_state.ocr_results = {}
         st.session_state.llm_outputs = {}
         st.session_state.saved_images = []
+        st.session_state.new_files = []
+        # st.session_state.uploader_key = "uploader_0"
+        update_key()
         st.rerun()
 
 st.markdown("----")
 
-# Batch download
-if st.session_state.saved_images:
-    logger.info(
-        f"Preparing ZIP for {len(st.session_state.uploaded_files)} saved images."
-    )
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for fname, fbytes in st.session_state.saved_images:
-            zip_file.writestr(fname, fbytes)
-    zip_buffer.seek(0)
-    st.download_button(
-        label="Download All",
-        icon="📁",
-        data=zip_buffer,
-        file_name=f"renamed_receipts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-        mime="application/zip",
-        key="batch_zip_download",
-    )
-    st.markdown("----")
-
 
 # Process each uploaded file
-for uploaded_file in st.session_state.uploaded_files:
+for idx, uploaded_file in enumerate(st.session_state.uploaded_files):
     file_id = uploaded_file.name
     reanalyze_key = f"reanalyze_{file_id}"
     already_processed = (
@@ -214,7 +209,7 @@ for uploaded_file in st.session_state.uploaded_files:
                         {"role": "user", "content": full_prompt},
                     ],
                     max_tokens=4096,
-                    temperature=0.75,
+                    temperature=0.85,
                     top_p=1.0,
                     model="gpt-4-32k-0613",
                 )
@@ -249,8 +244,6 @@ for uploaded_file in st.session_state.uploaded_files:
     ]
     new_filename = separator.join(parts) + os.path.splitext(file_id)[1]
 
-    st.subheader(f"📄 File: `{file_id}`  ➡️  `{new_filename}`")
-
     # Prepare renamed file for individual download
     download_buffer = io.BytesIO()
     image = Image.open(uploaded_file)
@@ -261,6 +254,42 @@ for uploaded_file in st.session_state.uploaded_files:
     download_buffer.seek(0)
 
     st.session_state.saved_images.append((new_filename, download_buffer.getvalue()))
+
+    # Batch download
+
+    if (
+        idx == 0
+        and st.session_state.saved_images
+        and len(st.session_state.uploaded_files) > 1
+    ):
+        logger.info(
+            f"Preparing ZIP for {len(st.session_state.uploaded_files)} saved images."
+        )
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for fname, fbytes in st.session_state.saved_images:
+                zip_file.writestr(fname, fbytes)
+        zip_buffer.seek(0)
+        st.download_button(
+            label=f"Download All Files ({len(st.session_state.uploaded_files)}) ",
+            icon="📁",
+            data=zip_buffer,
+            file_name=f"renamed_receipts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            mime="application/zip",
+            key="batch_zip_download",
+        )
+
+        #     filenames = [fname for fname, _ in st.session_state.saved_images]
+        #     if filenames:
+        #         st.selectbox(
+        #             "📁 Last Saved Filename:",
+        #             options=filenames,
+        #             index=len(filenames) - 1,
+        #             disabled=False,
+        #         )
+        st.markdown("----")
+
+    st.subheader(f"📄 File: `{file_id}`  ➡️  `{new_filename}`")
 
     st.download_button(
         label="Download",
