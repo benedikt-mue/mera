@@ -37,6 +37,32 @@ with st.spinner("Initializing models..."):
     _ = load_resources()
 
 st.title("👻 MRA - Mavi's Receipt Analyzer")
+st.markdown(
+    """
+    <span title="Hi Boo, I hope you having so much fun playing around with this little app as I had building it for you.  
+    I hope to build more features, but for now, I just wanted to give you a little something to play with. 
+    I hope this to be the new start of something bigger, something that we build together.. 
+    let´s call it life. 
+    Here, in 5th, 
+    in the 3rd 
+    and everywhere in-between and within.  
+    
+    I am in love you,
+    and not with the idea of you, 
+    not the memory of the past, 
+    but the real you, 
+    the real you and me, 
+    us. 
+    And I miss you so much.. 
+    I know you know. But it feel so good to say it out loud.. always, now and for our shared forever.
+
+    **sync pending.. waiting for the signal to reappear.. **">
+        👻
+    </span>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.info(
     "Hi Boo, welcome to your own Receipt Analyzer! "
     "\n\n"
