@@ -44,18 +44,21 @@ st.title("Upload and Analyze Receipt")
 
 st.markdown(" ")  # One empty line
 
+
 # Prompt for LLM
 default_prompt = """I extracted this text from my receipt, can you please find an appropriate category to classify the expense.
 The categories are: 'Food', 'Transport', 'Entertainment', 'Shopping', 'Health', 'Other'.
 If the text does not match any of the categories, respond with 'Other'. If you are unsure, also respond with 'Other'.
-Please follow these instructions carefully. Do not include any other text or explanations.
-Output 'Category', 'Date', 'Company or Point of Sale', 'Location', 'Currency', 'Amount Paid' each into a new line and use these words to map the data exactly as they are.
-The amount paid is the total amount on the receipt and usually accompanied by words like 'Total', 'Paid', or 'Amount' and a currency indicator.
-If the information is not available, put 'na' instead. Format the date to yyyy-mm-dd. Translate all outputted words into english."""
+"""
 
+if "custom_prompt" not in st.session_state:
+    st.session_state.custom_prompt = default_prompt
 
 st.markdown("## 🛠️ Extraction Prompt Customizer")
-with st.expander("Show/Hide prompt", expanded=False):
+with st.expander("Show edit prompt", expanded=False):
+    if st.button("Reset Prompt"):
+        st.session_state.custom_prompt = default_prompt
+        st.toast("Prompt reset to default.", icon="🔄")
     new_prompt = st.text_area(
         label="Edit the prompt (changes here do NOT trigger reprocessing)",
         value=st.session_state.custom_prompt,
@@ -64,14 +67,26 @@ with st.expander("Show/Hide prompt", expanded=False):
     )
     if new_prompt != st.session_state.custom_prompt:
         st.session_state.custom_prompt = new_prompt
-        st.toast("Prompt updated. It will be used for the next re-analysis.", icon="💡")
-
+        st.toast("Prompt updated. It will be used for the next Analysis.", icon="💡")
 
 end_custom_prompt = (
-    new_prompt
-    if new_prompt
-    else default_prompt
-    + "The text from the receipts is extracted from left top to bottom right in a list format. Here is the list: "
+    (
+        st.session_state.custom_prompt
+        if st.session_state.custom_prompt
+        else default_prompt
+    )
+    + """Please follow these instructions carefully. Do not include any other text or explanations. Output 'Category', 'Date', 'Company or Point of Sale', 'Location', 'Currency', 'Amount Paid' each into a new line and use these words to map the data exactly as they are.
+The amount paid is the total amount on the receipt and usually accompanied by words like 'Total', 'Paid', or 'Amount' and a currency indicator.
+If the information is not available, put 'na' instead. Format the date to yyyy-mm-dd. 
+Translate all outputted words into english. The text from the receipts is extracted from left top to bottom right in a list format. Here is the list: """
+)
+
+st.text_area(
+    "🔍 Current Prompt",
+    value=end_custom_prompt,
+    height=200,
+    disabled=True,
+    key="current_prompt_display",
 )
 
 # st.markdown(" ")  # One empty line
@@ -132,8 +147,6 @@ if "saved_images" not in st.session_state:
 if "reanalyze_triggered" not in st.session_state:
     st.session_state.reanalyze_triggered = False
     logger.info("Session state: initialized reanalyze_triggered.")
-if "custom_prompt" not in st.session_state:
-    st.session_state.custom_prompt = default_prompt
 
 st.markdown("----")
 st.markdown(" ")  # One empty line
