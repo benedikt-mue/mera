@@ -14,6 +14,9 @@ from pillow_heif import register_heif_opener
 from src.auth import load_authenticator
 from src.bootstrap import load_resources
 
+# page settings
+st.set_page_config(page_title="Upload", layout="wide", page_icon="👻")
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 logger = logging.getLogger(__name__)
@@ -77,7 +80,7 @@ st.markdown("### 🧩 Filename Pattern Builder")
 selected_fields = st.multiselect(
     "Select fields to include in filename (order matters):",
     options=allowed_fields,
-    default=["date", "category", "amount paid"],
+    default=["date", "category", "location"],
 )
 
 # Separator choice
@@ -111,8 +114,11 @@ if "llm_outputs" not in st.session_state:
 if "saved_images" not in st.session_state:
     st.session_state.saved_images = []
     logger.info("Session state: initialized saved_images.")
+if "reanalyze_triggered" not in st.session_state:
+    st.session_state.reanalyze_triggered = False
+    logger.info("Session state: initialized reanalyze_triggered.")
 
-st.markdown("----")  # One empty line
+st.markdown("----")
 st.markdown(" ")  # One empty line
 
 # File uploader
@@ -125,38 +131,36 @@ uploaded = st.file_uploader(
 
 st.markdown("")  # One empty line
 
-col1, col2 = st.columns([9, 1])
-with col1:
-    if st.session_state.uploaded_files:
-        if st.button("🗑️ Remove Uploaded Images"):
-            logger.info("User triggered removal of uploaded images.")
-            st.session_state.uploaded_files = []
-            st.session_state.ocr_results = {}
-            st.session_state.llm_outputs = {}
-            st.session_state.saved_images = []
-            current_index = int(st.session_state.uploader_key.split("_")[1])
-            st.session_state.uploader_key = f"uploader_{current_index + 1}"
-            st.rerun()
-with col2:
-    # batch download of all saved images
-    if st.session_state.saved_images:
-        logger.info(
-            f"Preparing ZIP for {len(st.session_state.saved_images)} saved images."
-        )
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for fname, fbytes in st.session_state.saved_images:
-                zip_file.writestr(fname, fbytes)
-        zip_buffer.seek(0)
-        st.download_button(
-            label="📁 Download All",
-            data=zip_buffer,
-            file_name=f"renamed_receipts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-            mime="application/zip",
-            key="batch_zip_download",
-        )
 
-st.markdown(" ")  # One empty line
+if st.session_state.uploaded_files:
+    if st.button("Remove Uploaded Images", icon="🗑️"):
+        logger.info("User triggered removal of uploaded images.")
+        st.session_state.uploaded_files = []
+        st.session_state.ocr_results = {}
+        st.session_state.llm_outputs = {}
+        st.session_state.saved_images = []
+        current_index = int(st.session_state.uploader_key.split("_")[1])
+        st.session_state.uploader_key = f"uploader_{current_index + 1}"
+        st.rerun()
+
+st.markdown("----")
+
+# batch download of all saved images
+if st.session_state.saved_images:
+    logger.info(f"Preparing ZIP for {len(st.session_state.saved_images)} saved images.")
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for fname, fbytes in st.session_state.saved_images:
+            zip_file.writestr(fname, fbytes)
+    zip_buffer.seek(0)
+    st.download_button(
+        label="Download All",
+        icon="📁",
+        data=zip_buffer,
+        file_name=f"renamed_receipts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+        mime="application/zip",
+        key="batch_zip_download",
+    )
 
 # Deduplication
 if uploaded:
@@ -171,7 +175,10 @@ if uploaded:
         st.rerun()
     else:
         logger.warning("All selected files were already uploaded.")
-        st.warning("⚠️ All selected files were already uploaded.")
+        st.toast(
+            "All (some) selected files were already uploaded.",
+            icon="⚠️",
+        )
 
 st.markdown("---")  # Horizontal rule
 
@@ -179,52 +186,12 @@ st.markdown("---")  # Horizontal rule
 for uploaded_file in st.session_state.uploaded_files:
     file_id = uploaded_file.name
     reanalyze_key = f"reanalyze_{file_id}"
-    save_key = f"save_{file_id}"
     already_processed = (
         file_id in st.session_state.ocr_results
         and file_id in st.session_state.llm_outputs
     )
-    st.subheader(f"📄 File: `{file_id}`")
 
-    col1, col2 = st.columns([10.5, 1])
-    with col1:
-        reanalyze_triggered = st.button("🔁 Rerun", key=reanalyze_key)
-    with col2:
-        if (
-            file_id in st.session_state.llm_outputs
-            and file_id in st.session_state.ocr_results
-        ):
-            data_dict = st.session_state.llm_outputs[file_id]
-
-            new_filename = (
-                separator.join(selected_fields) + os.path.splitext(file_id)[1]
-            )
-
-            image = Image.open(uploaded_file).convert("RGB")
-            image_bytes = io.BytesIO()
-            image.save(image_bytes, format=image.format or "JPEG")
-            image_bytes.seek(0)
-            image_data = image_bytes.read()
-
-            if new_filename not in [f[0] for f in st.session_state.saved_images]:
-                st.session_state.saved_images.append((new_filename, image_data))
-                logger.info(f"Saved image as {new_filename}.")
-
-            mime_type = (
-                "image/jpeg"
-                if new_filename.lower().endswith((".jpg", ".jpeg"))
-                else "image/png"
-            )
-
-            st.download_button(
-                label="⬇️ Download",
-                data=image_data,
-                file_name=new_filename,
-                mime=mime_type,
-                key=f"download_inline_{file_id}_{datetime.now().timestamp()}",
-            )
-
-    if already_processed and not reanalyze_triggered:
+    if already_processed and not st.session_state.reanalyze_triggered:
         logger.info(f"Using cached OCR/LLM results for {file_id}.")
         ocr_text = st.session_state.ocr_results[file_id]
         data_dict = st.session_state.llm_outputs[file_id]
@@ -249,7 +216,7 @@ for uploaded_file in st.session_state.uploaded_files:
                         {"role": "user", "content": full_prompt},
                     ],
                     max_tokens=4096,
-                    temperature=1,
+                    temperature=0.75,
                     top_p=1.0,
                     model="gpt-4-32k-0613",
                 )
@@ -278,13 +245,50 @@ for uploaded_file in st.session_state.uploaded_files:
             st.error(f"Error processing `{file_id}`: {e}")
             continue
 
+    # Compute the new filename from the processed result
+    parts = [
+        st.session_state.llm_outputs[file_id].get(t, "na") for t in selected_fields
+    ]
+    new_filename = separator.join(parts) + os.path.splitext(file_id)[1]
+
+    st.subheader(f"📄 File: `{file_id}`  ➡️  `{new_filename}`")
+
+    # Prepare renamed file for individual download
+    download_buffer = io.BytesIO()
+    image = Image.open(uploaded_file)
+    logger.info(f"Saving renamed image for {file_id} as {new_filename}.")
+    image.save(
+        download_buffer, format=image.format or "PNG"
+    )  # default to PNG if unknown
+    download_buffer.seek(0)
+
+    st.download_button(
+        label="Download",
+        icon="⬇️",
+        data=download_buffer,
+        file_name=new_filename,
+        mime="image/png",
+        key=f"download_{file_id}",
+    )
+
+    st.session_state.reanalyze_triggered = st.button(
+        "Rerun", icon="🔁", key=reanalyze_key
+    )
+    if st.session_state.reanalyze_triggered:
+        logger.info(f"User triggered reanalysis for {file_id}.")
+        st.session_state.reanalyze_triggered = True
+        # st.session_state.uploader_key = (
+        #     f"uploader_{int(st.session_state.uploader_key.split('_')[1]) + 1}"
+        # )
+        st.rerun()
+
     # Show extracted OCR results
     editable_df = (
         pd.DataFrame.from_dict(data_dict, orient="index", columns=["Value"])
         .rename_axis("Field")
         .reset_index()
     )
-    with st.expander("📝 Show Results", expanded=True):
+    with st.expander("Show Results", icon="📝", expanded=True):
         edited_df = st.data_editor(
             editable_df,
             num_rows="fixed",
@@ -293,8 +297,7 @@ for uploaded_file in st.session_state.uploaded_files:
         )
 
         # Show image
-        with st.expander("🖼️ Show Picture", expanded=True):
-            image = Image.open(uploaded_file).convert("RGB")
+        with st.expander("Show Picture", icon="🖼️", expanded=False):
             st.image(image, caption=f"🖼️ {file_id}", use_container_width=True)
-            with st.expander("🖋️ Show Raw Extracted Info"):
+            with st.expander("Show Raw Extracted Info", icon="🖋️"):
                 st.code(ocr_text)
