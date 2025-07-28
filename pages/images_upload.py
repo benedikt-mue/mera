@@ -121,7 +121,7 @@ if "reanalyze_triggered" not in st.session_state:
 st.markdown("----")
 st.markdown(" ")  # One empty line
 
-# File uploader
+# Upload widget
 uploaded = st.file_uploader(
     "📷 Upload one or more receipt images...",
     type=["jpg", "jpeg", "png", "heic"],
@@ -129,9 +129,25 @@ uploaded = st.file_uploader(
     key=st.session_state.uploader_key,
 )
 
-st.markdown("")  # One empty line
+# Process uploads AFTER rendering the widget
+if uploaded:
+    existing_names = {f.name for f in st.session_state.uploaded_files}
+    new_files = [f for f in uploaded if f.name not in existing_names]
 
+    if new_files:
+        st.session_state.uploaded_files.extend(new_files)
 
+        # Delay rerun until next interaction
+        index = int(st.session_state.uploader_key.split("_")[1]) + 1
+        st.session_state.uploader_key = f"uploader_{index}"
+
+    else:
+        st.toast("All (or some) selected files were already uploaded.", icon="⚠️")
+
+num_uploaded = len(st.session_state.uploaded_files)
+st.caption(f"🧾 {num_uploaded} unique file{'s' if num_uploaded != 1 else ''} uploaded.")
+
+# Remove button – visible only if files are uploaded
 if st.session_state.uploaded_files:
     if st.button("Remove Uploaded Images", icon="🗑️"):
         logger.info("User triggered removal of uploaded images.")
@@ -139,15 +155,15 @@ if st.session_state.uploaded_files:
         st.session_state.ocr_results = {}
         st.session_state.llm_outputs = {}
         st.session_state.saved_images = []
-        current_index = int(st.session_state.uploader_key.split("_")[1])
-        st.session_state.uploader_key = f"uploader_{current_index + 1}"
         st.rerun()
 
 st.markdown("----")
 
-# batch download of all saved images
+# Batch download
 if st.session_state.saved_images:
-    logger.info(f"Preparing ZIP for {len(st.session_state.saved_images)} saved images.")
+    logger.info(
+        f"Preparing ZIP for {len(st.session_state.uploaded_files)} saved images."
+    )
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for fname, fbytes in st.session_state.saved_images:
@@ -161,26 +177,8 @@ if st.session_state.saved_images:
         mime="application/zip",
         key="batch_zip_download",
     )
+    st.markdown("----")
 
-# Deduplication
-if uploaded:
-    logger.info(f"{len(uploaded)} files uploaded by user.")
-    existing_filenames = {f.name for f in st.session_state.uploaded_files}
-    new_files = [f for f in uploaded if f.name not in existing_filenames]
-    if new_files:
-        logger.info(f"{len(new_files)} new files to add: {[f.name for f in new_files]}")
-        st.session_state.uploaded_files.extend(new_files)
-        current_index = int(st.session_state.uploader_key.split("_")[1])
-        st.session_state.uploader_key = f"uploader_{current_index + 1}"
-        st.rerun()
-    else:
-        logger.warning("All selected files were already uploaded.")
-        st.toast(
-            "All (some) selected files were already uploaded.",
-            icon="⚠️",
-        )
-
-st.markdown("---")  # Horizontal rule
 
 # Process each uploaded file
 for uploaded_file in st.session_state.uploaded_files:
@@ -261,6 +259,8 @@ for uploaded_file in st.session_state.uploaded_files:
         download_buffer, format=image.format or "PNG"
     )  # default to PNG if unknown
     download_buffer.seek(0)
+
+    st.session_state.saved_images.append((new_filename, download_buffer.getvalue()))
 
     st.download_button(
         label="Download",
